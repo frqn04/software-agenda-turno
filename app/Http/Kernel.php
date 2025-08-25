@@ -14,6 +14,7 @@ class Kernel extends HttpKernel
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \App\Http\Middleware\TrimStrings::class,
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
+        \App\Http\Middleware\CheckBannedIp::class,
         \App\Http\Middleware\SecureHeaders::class,
         \App\Http\Middleware\SecurityLogging::class,
     ];
@@ -30,6 +31,8 @@ class Kernel extends HttpKernel
 
         'api' => [
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
+            \App\Http\Middleware\CorsMiddleware::class,
+            \App\Http\Middleware\ForceJsonResponse::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ],
@@ -46,10 +49,18 @@ class Kernel extends HttpKernel
         'precognitive' => \Illuminate\Foundation\Http\Middleware\HandlePrecognitiveRequests::class,
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
-        'throttle.ban' => \App\Http\Middleware\ThrottleWithBanMiddleware::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+        
+        // Custom middlewares
+        'admin' => \App\Http\Middleware\AdminMiddleware::class,
         'role' => \App\Http\Middleware\CheckRole::class,
+        'throttle.ban' => \App\Http\Middleware\ThrottleWithBanMiddleware::class,
+        'rate.limit' => \App\Http\Middleware\AdvancedRateLimit::class,
+        'business.hours' => \App\Http\Middleware\ValidateBusinessHours::class,
         'secure.headers' => \App\Http\Middleware\SecureHeaders::class,
         'security.log' => \App\Http\Middleware\SecurityLogging::class,
+        'cors' => \App\Http\Middleware\CorsMiddleware::class,
+        'json.response' => \App\Http\Middleware\ForceJsonResponse::class,
+        'banned.ip' => \App\Http\Middleware\CheckBannedIp::class,
     ];
 }

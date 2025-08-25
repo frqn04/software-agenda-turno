@@ -6,6 +6,7 @@ use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class AdvancedRateLimit
@@ -107,7 +108,7 @@ class AdvancedRateLimit
         }
 
         // Log de seguridad
-        \Log::warning('Rate limit exceeded', $logData);
+        Log::warning('Rate limit exceeded', $logData);
 
         // Almacenar en cache para detección de patrones
         $violationKey = "rate_limit_violations:{$request->ip()}";
@@ -125,7 +126,7 @@ class AdvancedRateLimit
         $banKey = "temp_ban:{$ip}";
         Cache::put($banKey, true, now()->addHours(24));
         
-        \Log::alert('Temporary IP ban applied', [
+        Log::alert('Temporary IP ban applied', [
             'ip' => $ip,
             'duration' => '24 hours',
             'reason' => 'Excessive rate limit violations',

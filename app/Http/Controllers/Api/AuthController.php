@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\LogAuditoria;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\StoreUserRequest;
 use Illuminate\Http\Request;

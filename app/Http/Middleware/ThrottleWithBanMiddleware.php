@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class ThrottleWithBanMiddleware
@@ -64,7 +65,7 @@ class ThrottleWithBanMiddleware
 
     protected function logSuspiciousActivity(Request $request, string $key): void
     {
-        \Log::warning('Rate limit exceeded - potential attack', [
+        Log::warning('Rate limit exceeded - potential attack', [
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'path' => $request->path(),

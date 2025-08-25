@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class CheckRole
 {
@@ -17,7 +18,7 @@ class CheckRole
         }
 
         if (!in_array($request->user()->rol, $roles)) {
-            \Log::warning('Unauthorized role access attempt', [
+            Log::warning('Unauthorized role access attempt', [
                 'user_id' => $request->user()->id,
                 'user_role' => $request->user()->rol,
                 'required_roles' => $roles,

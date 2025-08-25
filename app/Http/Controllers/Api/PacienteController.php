@@ -9,6 +9,7 @@ use App\Models\Evolucion;
 use App\Http\Requests\StorePacienteRequest;
 use App\Http\Requests\UpdatePacienteRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 
 class PacienteController extends Controller
 {
