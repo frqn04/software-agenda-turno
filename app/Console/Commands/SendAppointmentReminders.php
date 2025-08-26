@@ -3,36 +3,33 @@
 namespace App\Console\Commands;
 
 use App\Models\Turno;
-use App\Jobs\SendAppointmentReminderJob;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 /**
- * Comando para enviar recordatorios de citas médicas
- * Maneja múltiples tipos de recordatorios según timing
+ * Comando para generar alertas internas de turnos
+ * Sistema interno - solo para notificaciones al personal de la clínica
  */
 class SendAppointmentReminders extends Command
 {
     /**
      * The name and signature of the console command.
      */
-    protected $signature = 'appointments:send-reminders 
-                           {--type=all : Tipo de recordatorio (all, confirmacion, 24h, 2h, 30min, seguimiento)}
-                           {--dry-run : Ejecutar sin enviar recordatorios}
-                           {--force : Forzar envío ignorando verificaciones}';
+    protected $signature = 'clinica:alertas-turnos 
+                           {--tipo=hoy : Tipo de alerta (hoy, manana, vencidos)}
+                           {--silent : Ejecutar sin mostrar detalles}';
 
     /**
      * The console command description.
      */
-    protected $description = 'Envía recordatorios de turnos médicos según timing y tipo especificado';
+    protected $description = 'Genera alertas internas para el personal sobre turnos del día';
 
     private array $estadisticas = [
-        'total_encontrados' => 0,
-        'enviados_exitosos' => 0,
-        'errores' => 0,
-        'omitidos' => 0,
-        'por_tipo' => []
+        'turnos_hoy' => 0,
+        'turnos_manana' => 0,
+        'turnos_vencidos' => 0,
+        'doctores_ocupados' => 0
     ];
 
     /**
@@ -43,34 +40,34 @@ class SendAppointmentReminders extends Command
         $this->mostrarEncabezado();
 
         try {
-            $tipo = $this->option('type');
-            $dryRun = $this->option('dry-run');
-            $force = $this->option('force');
+            $tipo = $this->option('tipo');
+            $silent = $this->option('silent');
 
-            if ($dryRun) {
-                $this->warn('🧪 MODO DRY-RUN: No se enviarán recordatorios reales');
+            switch ($tipo) {
+                case 'hoy':
+                    $this->procesarTurnosHoy($silent);
+                    break;
+                case 'manana':
+                    $this->procesarTurnosManana($silent);
+                    break;
+                case 'vencidos':
+                    $this->procesarTurnosVencidos($silent);
+                    break;
+                default:
+                    $this->procesarTodosLosTurnos($silent);
             }
 
-            // Ejecutar según tipo de recordatorio
-            if ($tipo === 'all') {
-                $this->ejecutarTodosLosRecordatorios($dryRun, $force);
-            } else {
-                $this->ejecutarRecordatorioEspecifico($tipo, $dryRun, $force);
+            if (!$silent) {
+                $this->mostrarResumen();
             }
-
-            $this->mostrarResumen();
-            $this->registrarEstadisticas();
 
             return Command::SUCCESS;
 
         } catch (\Exception $e) {
-            $this->error("❌ Error general: {$e->getMessage()}");
-            
-            Log::error('Error en comando de recordatorios', [
+            $this->error("❌ Error: {$e->getMessage()}");
+            Log::error('Error en alertas de turnos', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
-
             return Command::FAILURE;
         }
     }

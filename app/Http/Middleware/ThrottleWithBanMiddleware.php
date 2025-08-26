@@ -65,13 +65,15 @@ class ThrottleWithBanMiddleware
 
     protected function logSuspiciousActivity(Request $request, string $key): void
     {
-        Log::warning('Rate limit exceeded - potential attack', [
+        Log::warning('Límite de solicitudes excedido - posible ataque al sistema de la clínica', [
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
-            'path' => $request->path(),
+            'endpoint' => $request->path(),
             'method' => $request->method(),
-            'timestamp' => now(),
-            'key' => $key
+            'user_id' => auth()->id(),
+            'attempts_key' => $key,
+            'timestamp' => now()->toISOString(),
+            'sistema' => 'clínica_dental_interna'
         ]);
     }
 }

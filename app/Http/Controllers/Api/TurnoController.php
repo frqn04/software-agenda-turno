@@ -10,7 +10,13 @@ use App\Services\TurnoService;
 use App\Services\AppointmentValidationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Carbon\Carbon;
 
+/**
+ * Controlador de turnos para clínica dental
+ * Maneja programación, cancelación y gestión de citas dentales
+ * Solo accesible por personal autorizado de la clínica
+ */
 class TurnoController extends Controller
 {
     protected $turnoService;
@@ -23,49 +29,95 @@ class TurnoController extends Controller
     }
 
     /**
-     * Display a listing of the resource.
+     * Listar turnos de la clínica dental con filtros avanzados
      */
     public function index(Request $request)
     {
-        $query = Turno::with(['paciente', 'doctor.especialidad']);
+        return $this->handleMedicalAction(function () use ($request) {
+            $user = $request->user();
+            $query = Turno::with(['paciente', 'doctor.especialidad']);
 
-        // Filtros
-        if ($request->has('doctor_id')) {
-            $query->where('doctor_id', $request->doctor_id);
-        }
+            // Filtros por rol de usuario
+            if ($user->rol === 'doctor' && $user->doctor_id) {
+                // Los doctores solo ven sus propios turnos
+                $query->where('doctor_id', $user->doctor_id);
+            }
 
-        if ($request->has('paciente_id')) {
-            $query->where('paciente_id', $request->paciente_id);
-        }
+            // Filtros de búsqueda
+            if ($request->has('doctor_id') && in_array($user->rol, ['admin', 'secretaria'])) {
+                $query->where('doctor_id', $request->doctor_id);
+            }
 
-        if ($request->has('fecha')) {
-            $query->where('fecha', $request->fecha);
-        }
+            if ($request->has('paciente_id')) {
+                $query->where('paciente_id', $request->paciente_id);
+            }
 
-        if ($request->has('estado')) {
-            $query->where('estado', $request->estado);
-        }
+            if ($request->has('fecha')) {
+                $query->where('fecha', $request->fecha);
+            } else {
+                // Por defecto mostrar turnos desde hoy
+                $query->where('fecha', '>=', now()->toDateString());
+            }
 
-        if ($request->has('fecha_desde') && $request->has('fecha_hasta')) {
-            $query->whereBetween('fecha', [$request->fecha_desde, $request->fecha_hasta]);
-        }
+            if ($request->has('estado')) {
+                $query->where('estado', $request->estado);
+            }
 
-        $turnos = $query->orderBy('fecha', 'desc')
-                       ->orderBy('hora_inicio')
-                       ->paginate(15);
+            if ($request->has('especialidad_id')) {
+                $query->whereHas('doctor', function ($q) use ($request) {
+                    $q->where('especialidad_id', $request->especialidad_id);
+                });
+            }
 
-        return response()->json([
-            'success' => true,
-            'data' => $turnos
-        ]);
+            if ($request->has('fecha_desde') && $request->has('fecha_hasta')) {
+                $query->whereBetween('fecha', [$request->fecha_desde, $request->fecha_hasta]);
+            }
+
+            // Búsqueda por paciente
+            if ($request->has('search_paciente')) {
+                $search = $request->search_paciente;
+                $query->whereHas('paciente', function ($q) use ($search) {
+                    $q->where('nombre', 'like', "%{$search}%")
+                      ->orWhere('apellido', 'like', "%{$search}%")
+                      ->orWhere('dni', 'like', "%{$search}%");
+                });
+            }
+
+            // Ordenamiento específico para clínica dental
+            $query->orderBy('fecha', 'asc')
+                  ->orderBy('hora_inicio', 'asc');
+
+            $perPage = min($request->get('per_page', 20), 50);
+            $turnos = $query->paginate($perPage);
+
+            $this->logMedicalActivity('Consulta de agenda de turnos', 'turnos', null, $request, [
+                'filters_applied' => $request->only(['doctor_id', 'fecha', 'estado', 'especialidad_id']),
+                'total_results' => $turnos->total(),
+                'user_role' => $user->rol,
+            ]);
+
+            return $this->paginatedResponse($turnos, 'Agenda de turnos de la clínica obtenida');
+        }, 'consulta de agenda');
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Programar nuevo turno dental
      */
     public function store(StoreTurnoRequest $request)
     {
-        try {
+        return $this->handleMedicalAction(function () use ($request) {
+            $user = $request->user();
+            
+            // Solo secretarias y admins pueden programar turnos
+            if (!in_array($user->rol, ['admin', 'secretaria'])) {
+                return $this->forbiddenResponse('Solo administradores y secretarias pueden programar turnos');
+            }
+
+            // Validar horarios de clínica dental
+            if (!$this->validateBusinessHours()) {
+                return $this->outsideBusinessHoursResponse();
+            }
+
             // Validar disponibilidad del doctor
             $validation = $this->appointmentValidationService->validateAppointment(
                 $request->doctor_id,
@@ -75,238 +127,403 @@ class TurnoController extends Controller
             );
 
             if (!$validation['valid']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => $validation['message']
-                ], 400);
+                return $this->errorResponse($validation['message'], 422);
+            }
+
+            // Validar que la fecha no sea domingo
+            $fecha = Carbon::parse($request->fecha);
+            if ($fecha->isSunday()) {
+                return $this->errorResponse('No se pueden programar turnos los domingos en la clínica', 422);
             }
 
             $turno = $this->turnoService->createTurno($request->validated());
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Turno creado exitosamente',
-                'data' => $turno->load(['paciente', 'doctor.especialidad'])
-            ], 201);
+            $this->logMedicalActivity('Nuevo turno dental programado', 'turnos', $turno->id, $request, [
+                'patient_dni' => $turno->paciente->dni,
+                'doctor_id' => $turno->doctor_id,
+                'appointment_date' => $turno->fecha,
+                'appointment_time' => $turno->hora_inicio,
+                'scheduled_by' => $user->name,
+                'motivo' => $turno->motivo_consulta,
+            ]);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al crear el turno: ' . $e->getMessage()
-            ], 500);
-        }
+            return $this->successResponse(
+                $turno->load(['paciente', 'doctor.especialidad']),
+                'Turno dental programado exitosamente',
+                201
+            );
+        }, 'programación de turno dental');
     }
 
     /**
-     * Display the specified resource.
+     * Mostrar detalles del turno dental
      */
     public function show(Turno $turno)
     {
-        return response()->json([
-            'success' => true,
-            'data' => $turno->load(['paciente', 'doctor.especialidad'])
-        ]);
+        return $this->handleMedicalAction(function () use ($turno) {
+            $user = request()->user();
+            
+            // Los doctores solo pueden ver sus propios turnos
+            if ($user->rol === 'doctor' && $user->doctor_id !== $turno->doctor_id) {
+                return $this->forbiddenResponse('Solo puede ver sus propios turnos');
+            }
+
+            $turnoData = $turno->load([
+                'paciente.historiaClinica', 
+                'doctor.especialidad'
+            ]);
+
+            $this->logMedicalActivity('Consulta de detalle de turno', 'turnos', $turno->id, request(), [
+                'patient_dni' => $turno->paciente->dni,
+                'appointment_date' => $turno->fecha,
+                'viewed_by' => $user->name,
+            ]);
+
+            return $this->successResponse($turnoData, 'Detalles del turno dental obtenidos');
+        }, 'consulta de turno');
     }
 
     /**
-     * Update the specified resource in storage.
+     * Actualizar turno dental existente
      */
     public function update(UpdateTurnoRequest $request, Turno $turno)
     {
-        try {
-            // Si se cambia doctor, fecha u hora, validar disponibilidad
-            if ($request->has(['doctor_id', 'fecha', 'hora_inicio', 'hora_fin'])) {
+        return $this->handleMedicalAction(function () use ($request, $turno) {
+            $user = $request->user();
+            
+            // Validar permisos según rol
+            if ($user->rol === 'doctor' && $user->doctor_id !== $turno->doctor_id) {
+                return $this->forbiddenResponse('Solo puede modificar sus propios turnos');
+            }
+            
+            if ($user->rol === 'operador') {
+                return $this->forbiddenResponse('Operadores no pueden modificar turnos');
+            }
+
+            // No permitir modificar turnos ya realizados
+            if ($turno->estado === 'realizado') {
+                return $this->errorResponse('No se puede modificar un turno ya realizado', 422);
+            }
+
+            $originalData = $turno->toArray();
+
+            // Si se cambian datos críticos, validar disponibilidad
+            if ($request->hasAny(['doctor_id', 'fecha', 'hora_inicio', 'hora_fin'])) {
                 $validation = $this->appointmentValidationService->validateAppointment(
-                    $request->doctor_id,
-                    $request->fecha,
-                    $request->hora_inicio,
-                    $request->hora_fin,
-                    $turno->id // Excluir el turno actual de la validación
+                    $request->doctor_id ?? $turno->doctor_id,
+                    $request->fecha ?? $turno->fecha,
+                    $request->hora_inicio ?? $turno->hora_inicio,
+                    $request->hora_fin ?? $turno->hora_fin,
+                    $turno->id
                 );
 
                 if (!$validation['valid']) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => $validation['message']
-                    ], 400);
+                    return $this->errorResponse($validation['message'], 422);
                 }
             }
 
             $turno = $this->turnoService->updateTurno($turno, $request->validated());
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Turno actualizado exitosamente',
-                'data' => $turno->load(['paciente', 'doctor.especialidad'])
+            // Log de cambios importantes
+            $changes = array_diff_assoc($turno->toArray(), $originalData);
+            unset($changes['updated_at']);
+
+            $this->logMedicalActivity('Turno dental actualizado', 'turnos', $turno->id, $request, [
+                'patient_dni' => $turno->paciente->dni,
+                'updated_by' => $user->name,
+                'fields_changed' => array_keys($changes),
+                'changes' => $changes,
             ]);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al actualizar el turno: ' . $e->getMessage()
-            ], 500);
-        }
+            return $this->successResponse(
+                $turno->load(['paciente', 'doctor.especialidad']),
+                'Turno dental actualizado exitosamente'
+            );
+        }, 'actualización de turno dental');
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Cancelar turno dental (solo admins)
      */
     public function destroy(Turno $turno)
     {
-        try {
-            $this->turnoService->deleteTurno($turno);
+        return $this->handleMedicalAction(function () use ($turno) {
+            $user = request()->user();
+            
+            // Solo admins pueden eliminar turnos definitivamente
+            if ($user->rol !== 'admin') {
+                return $this->forbiddenResponse('Solo administradores pueden eliminar turnos definitivamente');
+            }
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Turno eliminado exitosamente'
+            if ($turno->estado === 'realizado') {
+                return $this->errorResponse('No se puede eliminar un turno ya realizado', 422);
+            }
+
+            $this->logMedicalActivity('Turno dental eliminado definitivamente', 'turnos', $turno->id, request(), [
+                'patient_dni' => $turno->paciente->dni,
+                'appointment_date' => $turno->fecha,
+                'deleted_by' => $user->name,
+                'original_state' => $turno->estado,
+                'security_level' => 'high',
             ]);
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al eliminar el turno: ' . $e->getMessage()
-            ], 500);
-        }
+            $this->turnoService->deleteTurno($turno);
+
+            return $this->successResponse(null, 'Turno dental eliminado definitivamente');
+        }, 'eliminación definitiva de turno');
     }
 
     /**
-     * Cancel appointment
+     * Cancelar turno dental
      */
     public function cancelar(Turno $turno, Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'motivo_cancelacion' => 'nullable|string|max:500'
-        ]);
+        return $this->handleMedicalAction(function () use ($turno, $request) {
+            $user = $request->user();
+            
+            // Solo secretarias y admins pueden cancelar turnos
+            if (!in_array($user->rol, ['admin', 'secretaria'])) {
+                return $this->forbiddenResponse('Solo administradores y secretarias pueden cancelar turnos');
+            }
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Datos de validación incorrectos',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+            $validator = Validator::make($request->all(), [
+                'motivo_cancelacion' => 'required|string|max:500',
+                'notificar_paciente' => 'boolean',
+            ], [
+                'motivo_cancelacion.required' => 'Debe especificar el motivo de cancelación del turno dental',
+                'motivo_cancelacion.max' => 'El motivo no puede exceder 500 caracteres',
+            ]);
 
-        if ($turno->estado === 'cancelado') {
-            return response()->json([
-                'success' => false,
-                'message' => 'El turno ya está cancelado'
-            ], 400);
-        }
+            if ($validator->fails()) {
+                return $this->validationErrorResponse($validator);
+            }
 
-        if ($turno->estado === 'realizado') {
-            return response()->json([
-                'success' => false,
-                'message' => 'No se puede cancelar un turno que ya fue realizado'
-            ], 400);
-        }
+            if ($turno->estado === 'cancelado') {
+                return $this->errorResponse('El turno dental ya está cancelado', 422);
+            }
 
-        $turno->update([
-            'estado' => 'cancelado',
-            'motivo_cancelacion' => $request->motivo_cancelacion,
-            'fecha_cancelacion' => now()
-        ]);
+            if ($turno->estado === 'realizado') {
+                return $this->errorResponse('No se puede cancelar un turno dental que ya fue realizado', 422);
+            }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Turno cancelado exitosamente',
-            'data' => $turno->load(['paciente', 'doctor.especialidad'])
-        ]);
+            $turno->update([
+                'estado' => 'cancelado',
+                'motivo_cancelacion' => $request->motivo_cancelacion,
+                'fecha_cancelacion' => now(),
+                'cancelado_por' => $user->id,
+            ]);
+
+            $this->logMedicalActivity('Turno dental cancelado', 'turnos', $turno->id, $request, [
+                'patient_dni' => $turno->paciente->dni,
+                'appointment_date' => $turno->fecha,
+                'cancelled_by' => $user->name,
+                'cancellation_reason' => $request->motivo_cancelacion,
+                'notify_patient' => $request->boolean('notificar_paciente', false),
+            ]);
+
+            return $this->successResponse(
+                $turno->load(['paciente', 'doctor.especialidad']),
+                'Turno dental cancelado exitosamente'
+            );
+        }, 'cancelación de turno dental');
     }
 
     /**
-     * Mark appointment as completed
+     * Marcar turno como realizado (solo doctores)
      */
     public function realizar(Turno $turno, Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'observaciones' => 'nullable|string|max:1000'
-        ]);
+        return $this->handleMedicalAction(function () use ($turno, $request) {
+            $user = $request->user();
+            
+            // Solo el doctor asignado puede marcar como realizado
+            if ($user->rol !== 'doctor' || $user->doctor_id !== $turno->doctor_id) {
+                return $this->forbiddenResponse('Solo el doctor asignado puede marcar el turno como realizado');
+            }
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Datos de validación incorrectos',
-                'errors' => $validator->errors()
-            ], 422);
-        }
+            $validator = Validator::make($request->all(), [
+                'observaciones_consulta' => 'nullable|string|max:2000',
+                'tratamiento_realizado' => 'nullable|string|max:1500',
+                'proxima_cita' => 'nullable|date|after:today',
+                'precio_consulta' => 'nullable|numeric|min:0|max:999999.99',
+            ], [
+                'observaciones_consulta.max' => 'Las observaciones no pueden exceder 2000 caracteres',
+                'tratamiento_realizado.max' => 'El tratamiento no puede exceder 1500 caracteres',
+                'proxima_cita.after' => 'La próxima cita debe ser en el futuro',
+                'precio_consulta.numeric' => 'El precio debe ser un número válido',
+            ]);
 
-        if ($turno->estado === 'realizado') {
-            return response()->json([
-                'success' => false,
-                'message' => 'El turno ya está marcado como realizado'
-            ], 400);
-        }
+            if ($validator->fails()) {
+                return $this->validationErrorResponse($validator);
+            }
 
-        if ($turno->estado === 'cancelado') {
-            return response()->json([
-                'success' => false,
-                'message' => 'No se puede realizar un turno cancelado'
-            ], 400);
-        }
+            if ($turno->estado === 'realizado') {
+                return $this->errorResponse('El turno dental ya está marcado como realizado', 422);
+            }
 
-        $turno->update([
-            'estado' => 'realizado',
-            'observaciones' => $request->observaciones,
-            'fecha_realizacion' => now()
-        ]);
+            if ($turno->estado === 'cancelado') {
+                return $this->errorResponse('No se puede realizar un turno dental cancelado', 422);
+            }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Turno marcado como realizado',
-            'data' => $turno->load(['paciente', 'doctor.especialidad'])
-        ]);
+            $turno->update([
+                'estado' => 'realizado',
+                'observaciones_consulta' => $request->observaciones_consulta,
+                'tratamiento_realizado' => $request->tratamiento_realizado,
+                'fecha_realizacion' => now(),
+                'proxima_cita' => $request->proxima_cita,
+                'precio_consulta' => $request->precio_consulta,
+            ]);
+
+            $this->logMedicalActivity('Consulta dental realizada', 'turnos', $turno->id, $request, [
+                'patient_dni' => $turno->paciente->dni,
+                'doctor_id' => $user->doctor_id,
+                'consultation_date' => $turno->fecha,
+                'treatment_provided' => !empty($request->tratamiento_realizado),
+                'next_appointment' => $request->proxima_cita,
+                'consultation_fee' => $request->precio_consulta,
+            ]);
+
+            return $this->successResponse(
+                $turno->load(['paciente', 'doctor.especialidad']),
+                'Consulta dental completada exitosamente'
+            );
+        }, 'finalización de consulta dental');
     }
 
     /**
-     * Confirm appointment
+     * Confirmar turno dental (solo secretarias y admins)
      */
-    public function confirmar(Turno $turno)
+    public function confirmar(Turno $turno, Request $request)
     {
-        if ($turno->estado !== 'programado') {
-            return response()->json([
-                'success' => false,
-                'message' => 'Solo se pueden confirmar turnos en estado programado'
-            ], 400);
-        }
+        return $this->handleMedicalAction(function () use ($turno, $request) {
+            $user = $request->user();
+            
+            // Solo secretarias y admins pueden confirmar turnos
+            if (!in_array($user->rol, ['admin', 'secretaria'])) {
+                return $this->forbiddenResponse('Solo administradores y secretarias pueden confirmar turnos');
+            }
 
-        $turno->update([
-            'estado' => 'confirmado',
-            'fecha_confirmacion' => now()
-        ]);
+            if ($turno->estado === 'confirmado') {
+                return $this->errorResponse('El turno dental ya está confirmado', 422);
+            }
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Turno confirmado exitosamente',
-            'data' => $turno->load(['paciente', 'doctor.especialidad'])
-        ]);
+            if ($turno->estado === 'cancelado') {
+                return $this->errorResponse('No se puede confirmar un turno dental cancelado', 422);
+            }
+
+            if ($turno->estado === 'realizado') {
+                return $this->errorResponse('El turno dental ya fue realizado', 422);
+            }
+
+            $turno->update([
+                'estado' => 'confirmado',
+                'fecha_confirmacion' => now(),
+                'confirmado_por' => $user->id,
+            ]);
+
+            $this->logMedicalActivity('Turno dental confirmado', 'turnos', $turno->id, $request, [
+                'patient_dni' => $turno->paciente->dni,
+                'appointment_date' => $turno->fecha,
+                'confirmed_by' => $user->name,
+                'confirmation_date' => now(),
+            ]);
+
+            return $this->successResponse(
+                $turno->load(['paciente', 'doctor.especialidad']),
+                'Turno dental confirmado exitosamente'
+            );
+        }, 'confirmación de turno dental');
     }
 
     /**
-     * Get available time slots for a doctor on a date
+     * Obtener slots disponibles para turnos dentales
      */
     public function slotsDisponibles(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'doctor_id' => 'required|exists:doctores,id',
-            'fecha' => 'required|date|after_or_equal:today'
-        ]);
+        return $this->handleMedicalAction(function () use ($request) {
+            $user = $request->user();
+            
+            // Solo personal autorizado puede ver slots disponibles
+            if (!in_array($user->rol, ['admin', 'secretaria', 'operador'])) {
+                return $this->forbiddenResponse('No tiene permisos para consultar la disponibilidad de turnos');
+            }
 
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Datos de validación incorrectos',
-                'errors' => $validator->errors()
-            ], 422);
+            $validator = Validator::make($request->all(), [
+                'doctor_id' => 'required|exists:users,doctor_id',
+                'fecha' => 'required|date|after_or_equal:today',
+                'especialidad_id' => 'nullable|exists:especialidades,id',
+            ], [
+                'doctor_id.required' => 'Debe especificar el doctor',
+                'doctor_id.exists' => 'El doctor especificado no existe',
+                'fecha.required' => 'Debe especificar la fecha',
+                'fecha.after_or_equal' => 'La fecha debe ser hoy o posterior',
+                'especialidad_id.exists' => 'La especialidad especificada no existe',
+            ]);
+
+            if ($validator->fails()) {
+                return $this->validationErrorResponse($validator);
+            }
+
+            $fecha = Carbon::parse($request->fecha);
+            
+            // No permitir turnos los domingos
+            if ($fecha->isSunday()) {
+                return $this->errorResponse('No se programan turnos dentales los domingos', 422);
+            }
+
+            // Verificar que la fecha esté dentro del horario de atención
+            if (!$this->isBusinessDay($fecha)) {
+                return $this->errorResponse('La fecha seleccionada no está disponible para turnos dentales', 422);
+            }
+
+            try {
+                $slots = $this->turnoService->getAvailableSlots(
+                    $request->doctor_id,
+                    $request->fecha,
+                    $request->especialidad_id
+                );
+
+                $this->logMedicalActivity('Consulta de slots disponibles', 'turnos', null, $request, [
+                    'doctor_id' => $request->doctor_id,
+                    'requested_date' => $request->fecha,
+                    'specialty_id' => $request->especialidad_id,
+                    'slots_found' => count($slots),
+                    'consulted_by' => $user->name,
+                ]);
+
+                return $this->successResponse($slots, 'Slots disponibles obtenidos exitosamente');
+
+            } catch (\Exception $e) {
+                Log::error('Error obteniendo slots disponibles para turnos dentales', [
+                    'error' => $e->getMessage(),
+                    'doctor_id' => $request->doctor_id,
+                    'fecha' => $request->fecha,
+                    'user_id' => $user->id,
+                    'context' => 'dental_appointment_slots',
+                ]);
+
+                return $this->errorResponse('Error al obtener slots disponibles: ' . $e->getMessage());
+            }
+        }, 'consulta de slots disponibles');
+    }
+
+    /**
+     * Verificar si es día laborable en la clínica dental
+     */
+    private function isBusinessDay(Carbon $date): bool
+    {
+        // Lunes a Viernes: 8:00-18:00, Sábados: 8:00-13:00, Domingos: cerrado
+        if ($date->isSunday()) {
+            return false;
         }
 
-        $slots = $this->turnoService->getAvailableSlots(
-            $request->doctor_id,
-            $request->fecha
-        );
-
-        return response()->json([
-            'success' => true,
-            'data' => $slots
-        ]);
+        $hour = $date->hour;
+        
+        if ($date->isSaturday()) {
+            return $hour >= 8 && $hour < 13;
+        }
+        
+        // Lunes a Viernes
+        return $hour >= 8 && $hour < 18;
     }
 }

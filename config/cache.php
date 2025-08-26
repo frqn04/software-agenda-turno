@@ -3,32 +3,24 @@
 use Illuminate\Support\Str;
 
 return [
-
     /*
     |--------------------------------------------------------------------------
-    | Default Cache Store
+    | Cache Configuration for Dental Clinic System
     |--------------------------------------------------------------------------
-    |
-    | This option controls the default cache store that will be used by the
-    | framework. This connection is utilized if another isn't explicitly
-    | specified when running a cache operation inside the application.
-    |
+    | Configuración de cache optimizada para sistema interno de clínica
+    | odontológica con estrategias específicas para datos médicos
     */
 
-    'default' => env('CACHE_STORE', 'database'),
+    'default' => 'file', // File cache para sistema interno
 
     /*
     |--------------------------------------------------------------------------
-    | Cache Stores
+    | Cache Stores - Optimized for Medical Data
     |--------------------------------------------------------------------------
-    |
-    | Here you may define all of the cache "stores" for your application as
-    | well as their drivers. You may even define multiple stores for the
-    | same cache driver to group types of items stored in your caches.
-    |
-    | Supported drivers: "array", "database", "file", "memcached",
-    |                    "redis", "dynamodb", "octane", "null"
-    |
+    | Stores configurados para diferentes tipos de datos de la clínica:
+    | - file: Para datos generales (mejor para sistema interno)
+    | - database: Para datos críticos que requieren persistencia
+    | - array: Para testing y datos temporales
     */
 
     'stores' => [
@@ -40,10 +32,10 @@ return [
 
         'database' => [
             'driver' => 'database',
-            'connection' => env('DB_CACHE_CONNECTION'),
-            'table' => env('DB_CACHE_TABLE', 'cache'),
-            'lock_connection' => env('DB_CACHE_LOCK_CONNECTION'),
-            'lock_table' => env('DB_CACHE_LOCK_TABLE'),
+            'connection' => null,
+            'table' => 'cache',
+            'lock_connection' => null,
+            'lock_table' => null,
         ],
 
         'file' => [
@@ -52,6 +44,30 @@ return [
             'lock_path' => storage_path('framework/cache/data'),
         ],
 
+        // Cache específico para datos médicos críticos
+        'medical_records' => [
+            'driver' => 'database',
+            'connection' => null,
+            'table' => 'medical_cache',
+            'lock_connection' => null,
+            'lock_table' => 'medical_cache_locks',
+        ],
+
+        // Cache para citas y horarios (datos que cambian frecuentemente)
+        'appointments' => [
+            'driver' => 'file',
+            'path' => storage_path('framework/cache/appointments'),
+            'lock_path' => storage_path('framework/cache/appointments'),
+        ],
+
+        // Cache para reportes (datos pesados)
+        'reports' => [
+            'driver' => 'file',
+            'path' => storage_path('framework/cache/reports'),
+            'lock_path' => storage_path('framework/cache/reports'),
+        ],
+
+        // Mantenemos Redis y Memcached para escalabilidad futura
         'memcached' => [
             'driver' => 'memcached',
             'persistent_id' => env('MEMCACHED_PERSISTENT_ID'),
@@ -77,15 +93,6 @@ return [
             'lock_connection' => env('REDIS_CACHE_LOCK_CONNECTION', 'default'),
         ],
 
-        'dynamodb' => [
-            'driver' => 'dynamodb',
-            'key' => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-            'table' => env('DYNAMODB_CACHE_TABLE', 'cache'),
-            'endpoint' => env('DYNAMODB_ENDPOINT'),
-        ],
-
         'octane' => [
             'driver' => 'octane',
         ],
@@ -94,15 +101,29 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Cache Key Prefix
+    | Cache Key Prefix - Optimized for Clinic
     |--------------------------------------------------------------------------
-    |
-    | When utilizing the APC, database, memcached, Redis, and DynamoDB cache
-    | stores, there might be other applications using the same cache. For
-    | that reason, you may prefix every cache key to avoid collisions.
-    |
+    | Prefix específico para evitar colisiones con otros sistemas
+    | en la red local de la clínica
     */
 
-    'prefix' => env('CACHE_PREFIX', Str::slug((string) env('APP_NAME', 'laravel')).'-cache-'),
+    'prefix' => 'clinic-dental-cache-',
+
+    /*
+    |--------------------------------------------------------------------------
+    | Cache TTL Configuration for Medical Data
+    |--------------------------------------------------------------------------
+    | Tiempos de vida específicos para diferentes tipos de datos médicos
+    */
+
+    'ttl' => [
+        'patient_records' => 3600,      // 1 hora - datos que cambian poco
+        'appointments' => 1800,         // 30 minutos - datos que cambian frecuentemente
+        'doctor_schedules' => 7200,     // 2 horas - horarios relativamente estables
+        'reports' => 86400,             // 24 horas - reportes pesados
+        'user_sessions' => 14400,       // 4 horas - sesiones de usuario
+        'medical_history' => 21600,     // 6 horas - historias clínicas
+        'system_config' => 43200,       // 12 horas - configuración del sistema
+    ],
 
 ];

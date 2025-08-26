@@ -1,38 +1,40 @@
 <?php
 
 return [
-
     /*
     |--------------------------------------------------------------------------
-    | Third Party Services
+    | Third Party Services for Internal Dental Clinic System
     |--------------------------------------------------------------------------
-    |
-    | This file is for storing the credentials for third party services such
-    | as Mailgun, Postmark, AWS and more. This file provides the de facto
-    | location for this type of information, allowing packages to have
-    | a conventional file to locate the various service credentials.
-    |
+    | Servicios mínimos para sistema interno de clínica odontológica
+    | Solo servicios esenciales para funcionamiento básico
     */
 
+    // Servicios de email básicos (opcionales para sistema interno)
     'postmark' => [
-        'token' => env('POSTMARK_TOKEN'),
+        'token' => null, // No necesario para sistema interno
     ],
 
     'resend' => [
-        'key' => env('RESEND_KEY'),
+        'key' => null, // No necesario para sistema interno
     ],
 
-    'ses' => [
-        'key' => env('AWS_ACCESS_KEY_ID'),
-        'secret' => env('AWS_SECRET_ACCESS_KEY'),
-        'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
-    ],
-
-    'slack' => [
-        'notifications' => [
-            'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
-            'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
+    // Servicios de respaldo local (sin dependencias externas)
+    'backup' => [
+        'local_backup' => [
+            'enabled' => true,
+            'path' => storage_path('backups'),
+            'retention_days' => 30,
         ],
+        'network_backup' => [
+            'enabled' => false, // Configurar según red local
+            'path' => '', // Ruta de red local si se necesita
+        ],
+    ],
+
+    // Servicios de análisis interno (solo estadísticas locales)
+    'analytics' => [
+        'enabled' => false, // Sin tracking externo
+        'internal_reports' => true, // Solo reportes internos
     ],
 
 ];

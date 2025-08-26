@@ -36,18 +36,25 @@ class SecurityLogging
             'ip' => $request->ip(),
             'user_agent' => $request->userAgent(),
             'method' => $request->method(),
-            'path' => $request->path(),
+            'endpoint' => $request->path(),
             'status_code' => $response->getStatusCode(),
             'user_id' => auth()->id(),
+            'user_name' => auth()->user()?->name,
+            'user_role' => auth()->user()?->rol,
             'session_id' => $request->session()?->getId(),
             'referer' => $request->header('referer'),
             'request_size' => strlen($request->getContent()),
+            'sistema' => 'clínica_dental_interna'
         ];
 
         if ($response->getStatusCode() >= 400) {
-            $data['response_content'] = substr($response->getContent(), 0, 500);
+            $data['response_preview'] = substr($response->getContent(), 0, 300);
+            $data['event_type'] = 'security_error';
+        } else {
+            $data['event_type'] = 'security_success';
         }
 
+        // Log específico para intentos de login
         if ($request->isMethod('POST') && str_contains($request->path(), 'login')) {
             $data['login_attempt'] = [
                 'email' => $request->input('email'),
@@ -55,6 +62,13 @@ class SecurityLogging
             ];
         }
 
-        Log::channel('security')->info('Security Event', $data);
+        // Log según criticidad
+        if ($response->getStatusCode() >= 500) {
+            Log::error('Error crítico en sistema de clínica', $data);
+        } elseif ($response->getStatusCode() >= 400) {
+            Log::warning('Evento de seguridad en clínica', $data);
+        } else {
+            Log::info('Actividad de seguridad en clínica', $data);
+        }
     }
 }

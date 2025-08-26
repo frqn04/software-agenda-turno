@@ -12,130 +12,162 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rules\Password;
 
+/**
+ * Controlador de autenticación para personal de clínica dental
+ * Maneja login/logout de admin, doctores, secretarias y operadores
+ * Sistema interno con auditoría médica y seguridad reforzada
+ */
 class AuthController extends Controller
 {
+    /**
+     * Login de personal de clínica dental
+     */
     public function login(LoginRequest $request)
     {
-        $key = 'login:' . $request->throttleKey();
-        
-        if (RateLimiter::tooManyAttempts($key, 5)) {
-            $seconds = RateLimiter::availableIn($key);
+        return $this->handleMedicalAction(function () use ($request) {
+            $key = 'clinic_login:' . $request->throttleKey();
             
-            Log::warning('Login rate limit exceeded', [
-                'email' => $request->email,
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-            ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => "Demasiados intentos de login. Intente nuevamente en {$seconds} segundos."
-            ], 429);
-        }
+            // Rate limiting más estricto para sistema médico
+            if (RateLimiter::tooManyAttempts($key, 3)) {
+                $seconds = RateLimiter::availableIn($key);
+                
+                $this->logSecurityEvent('Exceso de intentos de login de personal médico', $request, [
+                    'email' => $request->email,
+                    'attempts_blocked' => true,
+                    'wait_seconds' => $seconds,
+                ]);
+                
+                return $this->errorResponse(
+                    "Demasiados intentos de acceso. Personal médico debe esperar {$seconds} segundos por seguridad.",
+                    429
+                );
+            }
 
-        $user = User::where('email', $request->email)
-                   ->where('activo', true)
-                   ->first();
+            // Buscar usuario activo del personal de clínica
+            $user = User::where('email', $request->email)
+                       ->where('activo', true)
+                       ->first();
 
-        if (!$user || !Hash::check($request->password, $user->password)) {
-            RateLimiter::hit($key, 300);
-            
-            Log::warning('Failed login attempt', [
-                'email' => $request->email,
-                'ip' => $request->ip(),
-                'user_agent' => $request->userAgent(),
-                'user_exists' => $user !== null,
-            ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Credenciales incorrectas'
-            ], 401);
-        }
+            if (!$user || !Hash::check($request->password, $user->password)) {
+                RateLimiter::hit($key, 600); // 10 minutos de bloqueo para sistema médico
+                
+                $this->logSecurityEvent('Intento de acceso fallido al sistema médico', $request, [
+                    'email' => $request->email,
+                    'user_exists' => $user !== null,
+                    'security_level' => 'high',
+                ]);
+                
+                return $this->unauthorizedResponse('Credenciales incorrectas para personal de clínica');
+            }
 
-        RateLimiter::clear($key);
+            // Verificar que el usuario tenga rol apropiado para clínica
+            if (!in_array($user->rol, ['admin', 'doctor', 'secretaria', 'operador'])) {
+                $this->logSecurityEvent('Intento de acceso con rol no autorizado', $request, [
+                    'user_id' => $user->id,
+                    'user_role' => $user->rol,
+                    'security_level' => 'critical',
+                ]);
+                
+                return $this->forbiddenResponse('Rol no autorizado para acceder al sistema de clínica');
+            }
 
-        $user->tokens()->delete();
+            RateLimiter::clear($key);
 
-        $token = $user->createToken(
-            'auth_token',
-            ['*'],
-            now()->addHours(config('sanctum.expiration', 24))
-        )->plainTextToken;
+            // Revocar tokens anteriores por seguridad médica
+            $user->tokens()->delete();
 
-        Log::info('Successful login', [
-            'user_id' => $user->id,
-            'email' => $user->email,
-            'ip' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ]);
+            // Crear token con expiración más corta para sistema médico
+            $token = $user->createToken(
+                'clinic_access_token',
+                ['*'],
+                now()->addHours(8) // 8 horas para personal médico
+            )->plainTextToken;
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Login exitoso',
-            'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'rol' => $user->rol,
+            // Log de acceso exitoso al sistema médico
+            $this->logMedicalActivity('Login exitoso de personal médico', 'users', $user->id, $request, [
+                'user_role' => $user->rol,
                 'doctor_id' => $user->doctor_id,
-            ]
-        ]);
+                'session_duration' => '8 horas',
+            ]);
+
+            return $this->successResponse([
+                'token' => $token,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'rol' => $user->rol,
+                    'doctor_id' => $user->doctor_id,
+                    'permissions' => $this->getUserPermissions($user),
+                    'clinic_access' => true,
+                    'session_expires_at' => now()->addHours(8)->toISOString(),
+                ]
+            ], 'Acceso exitoso al sistema de clínica dental');
+        }, 'login de personal médico');
     }
 
+    /**
+     * Logout de personal de clínica
+     */
     public function logout(Request $request)
     {
-        $user = $request->user();
-        
-        Log::info('User logout', [
-            'user_id' => $user->id,
-            'email' => $user->email,
-            'ip' => $request->ip(),
-        ]);
+        return $this->handleMedicalAction(function () use ($request) {
+            $user = $request->user();
+            
+            $this->logMedicalActivity('Logout de personal médico', 'users', $user->id, $request, [
+                'session_duration_minutes' => $user->currentAccessToken()->created_at->diffInMinutes(now()),
+            ]);
 
-        $request->user()->currentAccessToken()->delete();
+            $request->user()->currentAccessToken()->delete();
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Logout exitoso'
-        ]);
+            return $this->successResponse(null, 'Sesión cerrada exitosamente');
+        }, 'logout de personal médico');
     }
 
+    /**
+     * Registro de nuevo personal de clínica (solo admins)
+     */
     public function register(StoreUserRequest $request)
     {
-        $user = User::create($request->validated());
+        return $this->handleMedicalAction(function () use ($request) {
+            // Solo admins pueden crear usuarios
+            if ($request->user()->rol !== 'admin') {
+                return $this->forbiddenResponse('Solo administradores pueden registrar personal médico');
+            }
 
-        Log::info('New user created', [
-            'created_by' => $request->user()->id,
-            'new_user_id' => $user->id,
-            'email' => $user->email,
-            'rol' => $user->rol,
-            'ip' => $request->ip(),
-        ]);
+            $user = User::create($request->validated());
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Usuario creado exitosamente',
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'rol' => $user->rol,
+            $this->logMedicalActivity('Nuevo personal médico registrado', 'users', $user->id, $request, [
+                'created_by_admin' => $request->user()->id,
+                'new_user_role' => $user->rol,
+                'new_user_email' => $user->email,
                 'doctor_id' => $user->doctor_id,
-                'activo' => $user->activo,
-            ]
-        ], 201);
+            ]);
+
+            return $this->successResponse([
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'rol' => $user->rol,
+                    'doctor_id' => $user->doctor_id,
+                    'activo' => $user->activo,
+                ]
+            ], 'Personal médico registrado exitosamente', 201);
+        }, 'registro de personal médico');
     }
 
+    /**
+     * Obtener información del usuario actual
+     */
     public function user(Request $request)
     {
-        $user = $request->user();
-        
-        return response()->json([
-            'success' => true,
-            'user' => [
+        return $this->handleMedicalAction(function () use ($request) {
+            $user = $request->user();
+            
+            return $this->successResponse([
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
@@ -143,102 +175,174 @@ class AuthController extends Controller
                 'doctor_id' => $user->doctor_id,
                 'activo' => $user->activo,
                 'last_login' => $user->updated_at,
-            ]
-        ]);
+                'permissions' => $this->getUserPermissions($user),
+                'clinic_access' => true,
+                'token_expires_at' => $user->currentAccessToken()->expires_at,
+            ], 'Información de personal médico obtenida');
+        }, 'obtener información de usuario');
     }
 
+    /**
+     * Renovar token de acceso para personal médico
+     */
     public function refreshToken(Request $request)
     {
-        $user = $request->user();
-        
-        $user->currentAccessToken()->delete();
-        
-        $token = $user->createToken(
-            'auth_token',
-            ['*'],
-            now()->addHours(config('sanctum.expiration', 24))
-        )->plainTextToken;
+        return $this->handleMedicalAction(function () use ($request) {
+            $user = $request->user();
+            
+            $user->currentAccessToken()->delete();
+            
+            $token = $user->createToken(
+                'clinic_refresh_token',
+                ['*'],
+                now()->addHours(8) // Renovar por 8 horas más
+            )->plainTextToken;
 
-        return response()->json([
-            'success' => true,
-            'token' => $token,
-            'message' => 'Token renovado exitosamente'
-        ]);
+            $this->logMedicalActivity('Token renovado para personal médico', 'users', $user->id, $request);
+
+            return $this->successResponse([
+                'token' => $token,
+                'expires_at' => now()->addHours(8)->toISOString(),
+            ], 'Token de acceso renovado exitosamente');
+        }, 'renovación de token');
     }
 
+    /**
+     * Cambio de contraseña para personal médico
+     */
     public function changePassword(Request $request)
     {
-        $request->validate([
-            'current_password' => 'required|string',
-            'new_password' => 'required|string|min:8|confirmed',
-        ]);
+        return $this->handleMedicalAction(function () use ($request) {
+            $request->validate([
+                'current_password' => 'required|string',
+                'new_password' => [
+                    'required',
+                    'confirmed',
+                    Password::min(8)
+                        ->letters()
+                        ->mixedCase()
+                        ->numbers()
+                        ->symbols()
+                        ->uncompromised(),
+                ],
+            ], [
+                'current_password.required' => 'Debe ingresar su contraseña actual.',
+                'new_password.required' => 'Debe ingresar la nueva contraseña.',
+                'new_password.confirmed' => 'La confirmación de contraseña no coincide.',
+            ]);
 
-        $user = $request->user();
+            $user = $request->user();
 
-        // Verificar password actual
-        if (!Hash::check($request->current_password, $user->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'La contraseña actual es incorrecta'
-            ], 422);
-        }
+            // Verificar password actual
+            if (!Hash::check($request->current_password, $user->password)) {
+                $this->logSecurityEvent('Intento de cambio de contraseña con password incorrecto', $request, [
+                    'user_id' => $user->id,
+                    'security_level' => 'medium',
+                ]);
+                
+                return $this->errorResponse('La contraseña actual es incorrecta', 422);
+            }
 
-        // Verificar que la nueva contraseña sea diferente
-        if (Hash::check($request->new_password, $user->password)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'La nueva contraseña debe ser diferente a la actual'
-            ], 422);
-        }
+            // Verificar que la nueva contraseña sea diferente
+            if (Hash::check($request->new_password, $user->password)) {
+                return $this->errorResponse('La nueva contraseña debe ser diferente a la actual', 422);
+            }
 
-        // Actualizar contraseña
-        $user->update([
-            'password' => Hash::make($request->new_password)
-        ]);
+            // Actualizar contraseña
+            $user->update([
+                'password' => Hash::make($request->new_password)
+            ]);
 
-        // Revocar todos los tokens excepto el actual
-        $currentTokenId = $user->currentAccessToken()->id;
-        $user->tokens()->where('id', '!=', $currentTokenId)->delete();
+            // Revocar todos los tokens excepto el actual por seguridad
+            $currentTokenId = $user->currentAccessToken()->id;
+            $user->tokens()->where('id', '!=', $currentTokenId)->delete();
 
-        // Log de auditoría
-        LogAuditoria::logActivity(
-            'password_changed',
-            'users',
-            $user->id,
-            $user->id,
-            null,
-            ['user_id' => $user->id],
-            $request->ip()
-        );
+            // Log de auditoría médica
+            $this->logMedicalActivity('Cambio de contraseña de personal médico', 'users', $user->id, $request, [
+                'security_action' => true,
+                'tokens_revoked' => true,
+            ]);
 
-        return response()->json([
-            'success' => true,
-            'message' => 'Contraseña actualizada exitosamente'
-        ]);
+            LogAuditoria::logActivity(
+                'password_changed',
+                'users',
+                $user->id,
+                $user->id,
+                null,
+                ['user_role' => $user->rol, 'clinic_system' => true],
+                $request->ip()
+            );
+
+            return $this->successResponse(null, 'Contraseña actualizada exitosamente. Otras sesiones han sido cerradas por seguridad.');
+        }, 'cambio de contraseña');
     }
 
+    /**
+     * Revocar todas las sesiones del usuario (emergencia médica)
+     */
     public function revokeAllTokens(Request $request)
     {
-        $user = $request->user();
+        return $this->handleMedicalAction(function () use ($request) {
+            $user = $request->user();
+            
+            // Solo admins o el propio usuario pueden revocar tokens
+            if ($user->rol !== 'admin' && $request->user()->id !== $user->id) {
+                return $this->forbiddenResponse('Sin permisos para revocar sesiones de otro personal médico');
+            }
+            
+            $tokensCount = $user->tokens()->count();
+            $user->tokens()->delete();
+
+            $this->logSecurityEvent('Revocación de emergencia de todas las sesiones', $request, [
+                'user_id' => $user->id,
+                'tokens_revoked' => $tokensCount,
+                'security_level' => 'high',
+                'action_type' => 'emergency_logout',
+            ]);
+
+            return $this->successResponse([
+                'tokens_revoked' => $tokensCount,
+            ], 'Todas las sesiones del personal médico han sido cerradas por seguridad');
+        }, 'revocación de tokens de emergencia');
+    }
+
+    /**
+     * Obtener permisos según el rol del usuario en la clínica
+     */
+    private function getUserPermissions(User $user): array
+    {
+        $permissions = [];
         
-        if (!$user->can('manageSystem', User::class)) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No tienes permisos para esta acción'
-            ], 403);
+        switch ($user->rol) {
+            case 'admin':
+                $permissions = [
+                    'manage_users', 'manage_doctors', 'manage_patients', 
+                    'manage_appointments', 'manage_specialties', 'view_reports',
+                    'system_config', 'audit_logs', 'backup_system'
+                ];
+                break;
+                
+            case 'doctor':
+                $permissions = [
+                    'view_patients', 'manage_own_appointments', 'view_medical_history',
+                    'create_prescriptions', 'view_own_schedule', 'update_medical_notes'
+                ];
+                break;
+                
+            case 'secretaria':
+                $permissions = [
+                    'manage_appointments', 'view_patients', 'manage_patient_data',
+                    'view_schedules', 'generate_reports'
+                ];
+                break;
+                
+            case 'operador':
+                $permissions = [
+                    'view_appointments', 'basic_patient_info', 'reception_tasks'
+                ];
+                break;
         }
         
-        $user->tokens()->delete();
-
-        Log::warning('All tokens revoked by user', [
-            'user_id' => $user->id,
-            'email' => $user->email,
-            'ip' => $request->ip(),
-        ]);
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Todas las sesiones han sido cerradas'
-        ]);
+        return $permissions;
     }
 }

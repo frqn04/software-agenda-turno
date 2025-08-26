@@ -1,38 +1,27 @@
 <?php
 
 return [
-
     /*
     |--------------------------------------------------------------------------
-    | Authentication Defaults
+    | Authentication Configuration for Dental Clinic System
     |--------------------------------------------------------------------------
-    |
-    | This option defines the default authentication "guard" and password
-    | reset "broker" for your application. You may change these values
-    | as required, but they're a perfect start for most applications.
-    |
+    | Configuración de autenticación optimizada para sistema interno
+    | de clínica odontológica con roles específicos del personal médico
     */
 
     'defaults' => [
-        'guard' => env('AUTH_GUARD', 'web'),
-        'passwords' => env('AUTH_PASSWORD_BROKER', 'users'),
+        'guard' => 'web',
+        'passwords' => 'users',
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | Authentication Guards
+    | Authentication Guards - Optimized for Clinic Staff
     |--------------------------------------------------------------------------
-    |
-    | Next, you may define every authentication guard for your application.
-    | Of course, a great default configuration has been defined for you
-    | which utilizes session storage plus the Eloquent user provider.
-    |
-    | All authentication guards have a user provider, which defines how the
-    | users are actually retrieved out of your database or other storage
-    | system used by the application. Typically, Eloquent is utilized.
-    |
-    | Supported: "session"
-    |
+    | Guards configurados para el personal interno de la clínica:
+    | - web: Para acceso general del personal (admin, receptionist, operator)
+    | - doctor: Guard específico para doctores con permisos médicos
+    | - api: Para integraciones y acceso programático
     */
 
     'guards' => [
@@ -40,76 +29,71 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        
+        'doctor' => [
+            'driver' => 'session',
+            'provider' => 'doctors',
+        ],
+        
+        'api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | User Providers
+    | User Providers - Optimized for Clinic Staff
     |--------------------------------------------------------------------------
-    |
-    | All authentication guards have a user provider, which defines how the
-    | users are actually retrieved out of your database or other storage
-    | system used by the application. Typically, Eloquent is utilized.
-    |
-    | If you have multiple user tables or models you may configure multiple
-    | providers to represent the model / table. These providers may then
-    | be assigned to any extra authentication guards you have defined.
-    |
-    | Supported: "database", "eloquent"
-    |
+    | Providers configurados para diferentes tipos de usuarios de la clínica:
+    | - users: Personal general (admin, receptionist, operator)
+    | - doctors: Doctores con acceso a historias clínicas
     */
 
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', App\Models\User::class),
+            'model' => App\Models\User::class,
         ],
-
-        // 'users' => [
-        //     'driver' => 'database',
-        //     'table' => 'users',
-        // ],
+        
+        'doctors' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\Doctor::class,
+        ],
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | Resetting Passwords
+    | Password Reset Configuration - Optimized for Clinic
     |--------------------------------------------------------------------------
-    |
-    | These configuration options specify the behavior of Laravel's password
-    | reset functionality, including the table utilized for token storage
-    | and the user provider that is invoked to actually retrieve users.
-    |
-    | The expiry time is the number of minutes that each reset token will be
-    | considered valid. This security feature keeps tokens short-lived so
-    | they have less time to be guessed. You may change this as needed.
-    |
-    | The throttle setting is the number of seconds a user must wait before
-    | generating more password reset tokens. This prevents the user from
-    | quickly generating a very large amount of password reset tokens.
-    |
+    | Configuración de reset de passwords optimizada para personal interno
+    | con tiempos más cortos para mayor seguridad en entorno médico
     */
 
     'passwords' => [
         'users' => [
             'provider' => 'users',
-            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
-            'expire' => 60,
+            'table' => 'password_reset_tokens',
+            'expire' => 30, // 30 minutos para personal general
             'throttle' => 60,
+        ],
+        
+        'doctors' => [
+            'provider' => 'doctors',
+            'table' => 'password_reset_tokens',
+            'expire' => 15, // 15 minutos para doctores (mayor seguridad)
+            'throttle' => 120, // 2 minutos entre intentos
         ],
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | Password Confirmation Timeout
+    | Password Confirmation Timeout - Optimized for Medical Environment
     |--------------------------------------------------------------------------
-    |
-    | Here you may define the number of seconds before a password confirmation
-    | window expires and users are asked to re-enter their password via the
-    | confirmation screen. By default, the timeout lasts for three hours.
-    |
+    | Timeout reducido para confirmación de password en entorno médico
+    | donde la seguridad es crítica (1 hora en lugar de 3)
     */
 
-    'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
+    'password_timeout' => 3600, // 1 hora para entorno médico
 
 ];

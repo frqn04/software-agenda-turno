@@ -3,82 +3,56 @@
 use Laravel\Sanctum\Sanctum;
 
 return [
-
     /*
     |--------------------------------------------------------------------------
-    | Stateful Domains
+    | Sanctum Configuration for Internal Dental Clinic System
     |--------------------------------------------------------------------------
-    |
-    | Requests from the following domains / hosts will receive stateful API
-    | authentication cookies. Typically, these should include your local
-    | and production domains which access your API via a frontend SPA.
-    |
+    | Configuración de autenticación optimizada para sistema interno
+    | de clínica odontológica con seguridad mejorada
     */
 
-    'stateful' => explode(',', env('SANCTUM_STATEFUL_DOMAINS', sprintf(
-        '%s%s',
-        'localhost,localhost:3000,127.0.0.1,127.0.0.1:8000,::1',
-        Sanctum::currentApplicationUrlWithPort(),
-        // Sanctum::currentRequestHost(),
-    ))),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Sanctum Guards
-    |--------------------------------------------------------------------------
-    |
-    | This array contains the authentication guards that will be checked when
-    | Sanctum is trying to authenticate a request. If none of these guards
-    | are able to authenticate the request, Sanctum will use the bearer
-    | token that's present on an incoming request for authentication.
-    |
-    */
+    'stateful' => explode(',', 
+        'localhost,localhost:3000,localhost:8080,127.0.0.1,127.0.0.1:8000,::1'
+    ),
 
     'guard' => ['web'],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Expiration Minutes
-    |--------------------------------------------------------------------------
-    |
-    | This value controls the number of minutes until an issued token will be
-    | considered expired. This will override any values set in the token's
-    | "expires_at" attribute, but first-party sessions are not affected.
-    |
-    */
+    // Token expiration optimizado para jornada laboral (8 horas = 480 minutos)
+    'expiration' => 480,
 
-    'expiration' => null,
+    'token_prefix' => 'clinic_',
 
-    /*
-    |--------------------------------------------------------------------------
-    | Token Prefix
-    |--------------------------------------------------------------------------
-    |
-    | Sanctum can prefix new tokens in order to take advantage of numerous
-    | security scanning initiatives maintained by open source platforms
-    | that notify developers if they commit tokens into repositories.
-    |
-    | See: https://docs.github.com/en/code-security/secret-scanning/about-secret-scanning
-    |
-    */
-
-    'token_prefix' => env('SANCTUM_TOKEN_PREFIX', ''),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Sanctum Middleware
-    |--------------------------------------------------------------------------
-    |
-    | When authenticating your first-party SPA with Sanctum you may need to
-    | customize some of the middleware Sanctum uses while processing the
-    | request. You may change the middleware listed below as required.
-    |
-    */
-
+    // Middleware optimizado para clínica interna
     'middleware' => [
         'authenticate_session' => Laravel\Sanctum\Http\Middleware\AuthenticateSession::class,
-        'encrypt_cookies' => Illuminate\Cookie\Middleware\EncryptCookies::class,
-        'validate_csrf_token' => Illuminate\Foundation\Http\Middleware\ValidateCsrfToken::class,
+        'encrypt_cookies' => App\Http\Middleware\EncryptCookies::class,
+        'validate_csrf_token' => App\Http\Middleware\VerifyCsrfToken::class,
+    ],
+
+    // Configuración adicional para sistema interno
+    'personal_access_tokens' => [
+        'enabled' => true,
+        'table' => 'personal_access_tokens',
+        'expires_at' => 'expires_at',
+    ],
+
+    // Configuración de API para personal de clínica
+    'api' => [
+        'prefix' => 'api',
+        'middleware' => ['api'],
+        'rate_limiting' => [
+            'enabled' => true,
+            'max_attempts' => 120, // 120 requests por minuto para personal interno
+            'decay_minutes' => 1,
+        ],
+    ],
+
+    // Configuración de seguridad para clínica
+    'security' => [
+        'require_confirmation' => false, // No necesario para sistema interno
+        'hash_ids' => true, // Hash IDs para mayor seguridad
+        'audit_tokens' => true, // Auditar uso de tokens
+        'auto_logout_inactive' => 240, // Auto logout después de 4 horas inactivo
     ],
 
 ];

@@ -6,17 +6,23 @@ use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
+/**
+ * Middleware para verificar permisos de administrador
+ * Sistema interno - solo personal de clínica dental
+ */
 class AdminMiddleware
 {
     /**
      * Handle an incoming request.
-     *
-     * @param  \Closure(\Illuminate\Http\Request): (\Symfony\Component\HttpFoundation\Response)  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
         if (!$request->user() || $request->user()->rol !== 'admin') {
-            return response()->json(['message' => 'No tienes permisos para realizar esta acción'], 403);
+            return response()->json([
+                'success' => false,
+                'message' => 'Acceso restringido a administradores de la clínica',
+                'error_code' => 'INSUFFICIENT_PRIVILEGES'
+            ], 403);
         }
 
         return $next($request);

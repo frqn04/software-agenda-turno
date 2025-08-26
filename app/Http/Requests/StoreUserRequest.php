@@ -47,12 +47,20 @@ class StoreUserRequest extends FormRequest
             'rol' => [
                 'required',
                 'string',
-                'in:admin,doctor,secretaria'
+                'in:admin,doctor,secretaria,operador' // Roles específicos de clínica dental
             ],
             'doctor_id' => [
                 'nullable',
                 'exists:doctores,id',
-                'required_if:rol,doctor'
+                'required_if:rol,doctor',
+                function ($attribute, $value, $fail) {
+                    if ($this->rol === 'doctor' && $value) {
+                        $doctorUser = \App\Models\User::where('doctor_id', $value)->first();
+                        if ($doctorUser) {
+                            $fail('Este doctor ya tiene un usuario asignado en el sistema.');
+                        }
+                    }
+                }
             ],
             'activo' => 'boolean',
         ];
@@ -61,18 +69,29 @@ class StoreUserRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'name.required' => 'El nombre es obligatorio.',
+            'name.required' => 'El nombre completo del personal es obligatorio.',
             'name.regex' => 'El nombre solo puede contener letras y espacios.',
-            'email.required' => 'El email es obligatorio.',
+            'email.required' => 'El email del personal es obligatorio.',
             'email.email' => 'El email debe tener un formato válido.',
-            'email.unique' => 'Este email ya está registrado.',
+            'email.unique' => 'Este email ya está registrado en el sistema de la clínica.',
             'email.not_regex' => 'El email contiene caracteres no permitidos.',
-            'password.required' => 'La contraseña es obligatoria.',
+            'password.required' => 'La contraseña del personal es obligatoria.',
             'password.confirmed' => 'La confirmación de contraseña no coincide.',
-            'rol.required' => 'El rol es obligatorio.',
-            'rol.in' => 'El rol seleccionado no es válido.',
-            'doctor_id.required_if' => 'El doctor es obligatorio para usuarios con rol doctor.',
-            'doctor_id.exists' => 'El doctor seleccionado no existe.',
+            'rol.required' => 'Debe asignar un rol al personal de la clínica.',
+            'rol.in' => 'El rol debe ser: admin, doctor, secretaria u operador.',
+            'doctor_id.required_if' => 'Debe seleccionar el doctor al que pertenece esta cuenta.',
+            'doctor_id.exists' => 'El doctor seleccionado no existe en la clínica.',
+        ];
+    }
+
+    public function attributes(): array
+    {
+        return [
+            'name' => 'nombre del personal',
+            'email' => 'email del personal',
+            'password' => 'contraseña',
+            'rol' => 'rol en la clínica',
+            'doctor_id' => 'doctor asignado',
         ];
     }
 

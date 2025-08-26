@@ -20,9 +20,17 @@ class CheckBannedIp
         // Verificar si la IP está en la lista de IPs bloqueadas permanentemente
         $permanentBans = config('security.banned_ips', []);
         if (in_array($ip, $permanentBans)) {
+            Log::warning('IP bloqueada intentó acceder al sistema de clínica', [
+                'ip' => $ip,
+                'user_agent' => $request->userAgent(),
+                'endpoint' => $request->path(),
+                'timestamp' => now()->toISOString()
+            ]);
+
             return response()->json([
                 'success' => false,
-                'message' => 'Acceso denegado'
+                'message' => 'Acceso restringido al sistema de la clínica',
+                'error_code' => 'IP_BANNED'
             ], 403);
         }
 

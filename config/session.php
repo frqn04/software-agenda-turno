@@ -3,51 +3,34 @@
 use Illuminate\Support\Str;
 
 return [
+    /*
+    |--------------------------------------------------------------------------
+    | Session Configuration for Internal Dental Clinic System
+    |--------------------------------------------------------------------------
+    | Configuración de sesiones optimizada para sistema interno de clínica
+    | con seguridad apropiada para entorno médico
+    */
+
+    'driver' => 'database', // Database para persistencia en sistema interno
 
     /*
     |--------------------------------------------------------------------------
-    | Default Session Driver
+    | Session Lifetime - Optimized for Medical Environment
     |--------------------------------------------------------------------------
-    |
-    | This option determines the default session driver that is utilized for
-    | incoming requests. Laravel supports a variety of storage options to
-    | persist session data. Database storage is a great default choice.
-    |
-    | Supported: "file", "cookie", "database", "memcached",
-    |            "redis", "dynamodb", "array"
-    |
+    | Configuración para jornada laboral de clínica (4 horas por sesión)
     */
 
-    'driver' => env('SESSION_DRIVER', 'database'),
+    'lifetime' => 240, // 4 horas para jornada laboral de clínica
+    'expire_on_close' => true, // Expirar al cerrar navegador por seguridad
 
     /*
     |--------------------------------------------------------------------------
-    | Session Lifetime
+    | Session Encryption - Enabled for Medical Data
     |--------------------------------------------------------------------------
-    |
-    | Here you may specify the number of minutes that you wish the session
-    | to be allowed to remain idle before it expires. If you want them
-    | to expire immediately when the browser is closed then you may
-    | indicate that via the expire_on_close configuration option.
-    |
+    | Encriptación habilitada por seguridad de datos médicos
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 60), // Reducir a 60 minutos
-
-    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', true), // Expirar al cerrar navegador
-
-    /*
-    |--------------------------------------------------------------------------
-    | Session Encryption
-    |--------------------------------------------------------------------------
-    |
-    | This option allows you to easily specify that all of your session data
-    | should be encrypted before it's stored. All encryption is performed
-    | automatically by Laravel and you may use the session like normal.
-    |
-    */
-
-    'encrypt' => env('SESSION_ENCRYPT', true), // Habilitar encriptación
+    'encrypt' => true, // Obligatorio para datos médicos
 
     /*
     |--------------------------------------------------------------------------
@@ -86,22 +69,18 @@ return [
     |
     */
 
-    'table' => env('SESSION_TABLE', 'sessions'),
+    'table' => 'sessions',
 
     /*
     |--------------------------------------------------------------------------
     | Session Cache Store
     |--------------------------------------------------------------------------
     |
-    | When using one of the framework's cache driven session backends, you may
-    | define the cache store which should be used to store the session data
-    | between requests. This must match one of your defined cache stores.
-    |
-    | Affects: "dynamodb", "memcached", "redis"
+    | Para sistema médico usamos cache de archivos como respaldo
     |
     */
 
-    'store' => env('SESSION_STORE'),
+    'store' => null,
 
     /*
     |--------------------------------------------------------------------------
@@ -127,91 +106,72 @@ return [
     |
     */
 
-    'cookie' => env(
-        'SESSION_COOKIE',
-        Str::snake((string) env('APP_NAME', 'laravel')).'_session'
-    ),
+    'cookie' => 'clinica_dental_session',
 
     /*
     |--------------------------------------------------------------------------
     | Session Cookie Path
     |--------------------------------------------------------------------------
     |
-    | The session cookie path determines the path for which the cookie will
-    | be regarded as available. Typically, this will be the root path of
-    | your application, but you're free to change this when necessary.
+    | Ruta específica para el sistema de clínica dental
     |
     */
 
-    'path' => env('SESSION_PATH', '/'),
+    'path' => '/',
 
     /*
     |--------------------------------------------------------------------------
     | Session Cookie Domain
     |--------------------------------------------------------------------------
     |
-    | This value determines the domain and subdomains the session cookie is
-    | available to. By default, the cookie will be available to the root
-    | domain and all subdomains. Typically, this shouldn't be changed.
+    | Para sistema interno local no especificamos dominio
     |
     */
 
-    'domain' => env('SESSION_DOMAIN'),
+    'domain' => null,
 
     /*
     |--------------------------------------------------------------------------
     | HTTPS Only Cookies
     |--------------------------------------------------------------------------
     |
-    | By setting this option to true, session cookies will only be sent back
-    | to the server if the browser has a HTTPS connection. This will keep
-    | the cookie from being sent to you when it can't be done securely.
+    | Configurado para ambiente médico seguro
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE', true), // Solo HTTPS
+    'secure' => true,
 
     /*
     |--------------------------------------------------------------------------
     | HTTP Access Only
     |--------------------------------------------------------------------------
     |
-    | Setting this value to true will prevent JavaScript from accessing the
-    | value of the cookie and the cookie will only be accessible through
-    | the HTTP protocol. It's unlikely you should disable this option.
+    | Prevenir acceso JavaScript para mayor seguridad médica
     |
     */
 
-    'http_only' => env('SESSION_HTTP_ONLY', true),
+    'http_only' => true,
 
     /*
     |--------------------------------------------------------------------------
     | Same-Site Cookies
     |--------------------------------------------------------------------------
     |
-    | This option determines how your cookies behave when cross-site requests
-    | take place, and can be used to mitigate CSRF attacks. By default, we
-    | will set this value to "lax" to permit secure cross-site requests.
-    |
-    | See: https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#samesitesamesite-value
-    |
-    | Supported: "lax", "strict", "none", null
+    | Configuración estricta para sistema médico interno
     |
     */
 
-    'same_site' => env('SESSION_SAME_SITE', 'strict'), // Más restrictivo
+    'same_site' => 'strict',
 
     /*
     |--------------------------------------------------------------------------
     | Partitioned Cookies
     |--------------------------------------------------------------------------
     |
-    | Setting this value to true will tie the cookie to the top-level site for
-    | a cross-site context. Partitioned cookies are accepted by the browser
-    | when flagged "secure" and the Same-Site attribute is set to "none".
+    | No necesario para sistema interno
     |
     */
 
-    'partitioned' => env('SESSION_PARTITIONED_COOKIE', false),
+    'partitioned' => false,
 
 ];

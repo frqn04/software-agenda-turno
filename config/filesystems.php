@@ -1,31 +1,22 @@
 <?php
 
 return [
-
     /*
     |--------------------------------------------------------------------------
-    | Default Filesystem Disk
+    | Filesystem Configuration for Dental Clinic System
     |--------------------------------------------------------------------------
-    |
-    | Here you may specify the default filesystem disk that should be used
-    | by the framework. The "local" disk, as well as a variety of cloud
-    | based disks are available to your application for file storage.
-    |
+    | Configuración de sistemas de archivos optimizada para clínica odontológica
+    | con manejo seguro de historias clínicas, radiografías y documentos médicos
     */
 
     'default' => env('FILESYSTEM_DISK', 'local'),
 
     /*
     |--------------------------------------------------------------------------
-    | Filesystem Disks
+    | Filesystem Disks - Optimized for Medical Files
     |--------------------------------------------------------------------------
-    |
-    | Below you may configure as many filesystem disks as necessary, and you
-    | may even configure multiple disks for the same driver. Examples for
-    | most supported storage drivers are configured here for reference.
-    |
-    | Supported drivers: "local", "ftp", "sftp", "s3"
-    |
+    | Discos configurados específicamente para diferentes tipos de archivos
+    | médicos con seguridad y organización apropiada para clínica
     */
 
     'disks' => [
@@ -47,30 +38,73 @@ return [
             'report' => false,
         ],
 
-        's3' => [
-            'driver' => 's3',
-            'key' => env('AWS_ACCESS_KEY_ID'),
-            'secret' => env('AWS_SECRET_ACCESS_KEY'),
-            'region' => env('AWS_DEFAULT_REGION'),
-            'bucket' => env('AWS_BUCKET'),
-            'url' => env('AWS_URL'),
-            'endpoint' => env('AWS_ENDPOINT'),
-            'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
+        // Disco específico para historias clínicas (privado y seguro)
+        'medical_records' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/medical_records'),
+            'serve' => false, // No servir directamente por seguridad
             'throw' => false,
             'report' => false,
+            'visibility' => 'private',
+        ],
+
+        // Disco para radiografías e imágenes médicas
+        'xrays' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/xrays'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+            'visibility' => 'private',
+        ],
+
+        // Disco para documentos de pacientes (consentimientos, etc.)
+        'patient_documents' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/patient_docs'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+            'visibility' => 'private',
+        ],
+
+        // Disco para respaldos de la clínica
+        'backups' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/backups'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+            'visibility' => 'private',
+        ],
+
+        // Disco para reportes generados
+        'reports' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/reports'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+            'visibility' => 'private',
+        ],
+
+        // Disco para archivos temporales de la clínica
+        'temp' => [
+            'driver' => 'local',
+            'root' => storage_path('app/temp'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+            'visibility' => 'private',
         ],
 
     ],
 
     /*
     |--------------------------------------------------------------------------
-    | Symbolic Links
+    | Symbolic Links - Optimized for Clinic
     |--------------------------------------------------------------------------
-    |
-    | Here you may configure the symbolic links that will be created when the
-    | `storage:link` Artisan command is executed. The array keys should be
-    | the locations of the links and the values should be their targets.
-    |
+    | Links simbólicos solo para archivos públicos seguros
     */
 
     'links' => [
